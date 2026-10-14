@@ -45,7 +45,18 @@
             </div>
 
             <!-- Right Side: Total Count Badge -->
-            <div class="flex items-center space-x-3">
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                <!-- Backup Export Button -->
+                <button onclick="exportBackup()" class="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-bold text-xs flex items-center justify-center shadow-sm transition-all transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-slate-400" title="백업 저장 (JSON)">
+                    <i class="fas fa-download"></i>
+                </button>
+
+                <!-- Backup Import Button -->
+                <button onclick="triggerImport()" class="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-bold text-xs flex items-center justify-center shadow-sm transition-all transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-slate-400" title="백업 불러오기">
+                    <i class="fas fa-upload"></i>
+                </button>
+                <input type="file" id="backupFileInput" accept=".json" class="hidden" onchange="handleImportBackup(event)">
+
                 <!-- Info Padlet Button -->
                 <a href="https://padlet.com/lhh2961/padlet-s024hokilhef9khv28ds" 
                    target="_blank" 
@@ -182,6 +193,21 @@
         </div>
     </div>
 
+    <!-- Custom Modal for Alerts & Confirms -->
+    <div id="customModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300 p-3">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 text-center transform scale-95 transition-transform duration-300">
+            <div id="customModalIcon" class="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-3 text-xl">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h4 id="customModalTitle" class="font-bold text-slate-800 text-sm mb-1">알림</h4>
+            <p id="customModalText" class="text-xs text-slate-600 mb-5 leading-relaxed">메시지 내용</p>
+            <div id="customModalButtons" class="flex justify-center gap-2">
+                <button id="customModalOkBtn" onclick="closeCustomModal()" class="px-4 py-2 bg-red-500 text-white text-xs font-semibold rounded-lg hover:bg-red-600 transition">확인</button>
+                <button id="customModalCancelBtn" class="hidden px-4 py-2 bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-300 transition">취소</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let books = [];
         let currentRating = 5.0;
@@ -232,8 +258,57 @@
             renderBooks();
         };
 
+        /* Custom Modal Helpers */
+        function showCustomMessage(text, title = "알림") {
+            document.getElementById('customModalTitle').textContent = title;
+            document.getElementById('customModalText').textContent = text;
+            document.getElementById('customModalCancelBtn').classList.add('hidden');
+            const okBtn = document.getElementById('customModalOkBtn');
+            okBtn.onclick = closeCustomModal;
+            okBtn.textContent = "확인";
+            
+            const modal = document.getElementById('customModal');
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            modal.querySelector('div').classList.remove('scale-95');
+            modal.querySelector('div').classList.add('scale-100');
+        }
+
+        function showCustomConfirm(text, onConfirm, title = "확인") {
+            document.getElementById('customModalTitle').textContent = title;
+            document.getElementById('customModalText').textContent = text;
+            const cancelBtn = document.getElementById('customModalCancelBtn');
+            cancelBtn.classList.remove('hidden');
+            
+            const okBtn = document.getElementById('customModalOkBtn');
+            okBtn.textContent = "확인";
+            okBtn.onclick = function() {
+                closeCustomModal();
+                if (onConfirm) onConfirm();
+            };
+            cancelBtn.onclick = closeCustomModal;
+
+            const modal = document.getElementById('customModal');
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            modal.querySelector('div').classList.remove('scale-95');
+            modal.querySelector('div').classList.add('scale-100');
+        }
+
+        function closeCustomModal() {
+            const modal = document.getElementById('customModal');
+            modal.classList.add('opacity-0', 'pointer-events-none');
+            modal.querySelector('div').classList.remove('scale-100');
+            modal.querySelector('div').classList.add('scale-95');
+        }
+
         function saveToLocalStorage() {
-            localStorage.setItem('my_reading_list', JSON.stringify(books));
+            try {
+                localStorage.setItem('my_reading_list', JSON.stringify(books));
+                return true;
+            } catch (e) {
+                console.error(e);
+                showCustomMessage("저장 공간이 부족해요. 사진 용량을 줄이거나 오래된 기록을 백업 후 삭제해 주세요.");
+                return false;
+            }
         }
 
         /* 0.5 Step Interactive Star Rating Setup */
@@ -438,9 +513,35 @@
             if (file) {
                 const reader = new FileReader();
                 reader.onload = function(e) {
-                    selectedImageData = e.target.result;
-                    showPreview(selectedImageData);
-                    document.getElementById('imageUrlInput').value = '';
+                    const img = new Image();
+                    img.onload = function() {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+                        const MAX_SIZE = 600;
+
+                        if (width > height) {
+                            if (width > MAX_SIZE) {
+                                height *= MAX_SIZE / width;
+                                width = MAX_SIZE;
+                            }
+                        } else {
+                            if (height > MAX_SIZE) {
+                                width *= MAX_SIZE / height;
+                                height = MAX_SIZE;
+                            }
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        selectedImageData = canvas.toDataURL('image/jpeg', 0.7);
+                        showPreview(selectedImageData);
+                        document.getElementById('imageUrlInput').value = '';
+                    };
+                    img.src = e.target.result;
                 };
                 reader.readAsDataURL(file);
             }
@@ -494,7 +595,11 @@
             };
 
             books.push(newBook);
-            saveToLocalStorage();
+            if (!saveToLocalStorage()) {
+                books.pop(); // Revert addition on error
+                renderBooks();
+                return;
+            }
             renderBooks();
             closeModal();
         }
@@ -503,6 +608,68 @@
             books = books.filter(book => book.id !== id);
             saveToLocalStorage();
             renderBooks();
+        }
+
+        /* Backup Export and Import Features */
+        function exportBackup() {
+            const dataStr = JSON.stringify(books, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const downloadAnchor = document.createElement('a');
+            const dateStr = new Date().toISOString().split('T')[0];
+            downloadAnchor.setAttribute("href", url);
+            downloadAnchor.setAttribute("download", `reading-list-backup-${dateStr}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+            URL.revokeObjectURL(url);
+        }
+
+        function triggerImport() {
+            document.getElementById('backupFileInput').click();
+        }
+
+        function handleImportBackup(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const fileInput = document.getElementById('backupFileInput');
+            fileInput.value = '';
+
+            showCustomConfirm("현재 기록이 덮어써집니다. 계속하시겠습니까?", () => {
+                const previousBooks = [...books];
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const parsed = JSON.parse(e.target.result);
+                        if (!Array.isArray(parsed)) {
+                            throw new Error("Invalid format");
+                        }
+                        for (let item of parsed) {
+                            if (!item || typeof item !== 'object' || !item.id || !item.title) {
+                                throw new Error("Missing required fields (id, title)");
+                            }
+                            if (!item.createdAt) {
+                                item.createdAt = Date.now();
+                            }
+                        }
+                        books = parsed;
+                        if (saveToLocalStorage()) {
+                            renderBooks();
+                            showCustomMessage("백업을 성공적으로 불러왔습니다!");
+                        } else {
+                            books = previousBooks;
+                            renderBooks();
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        books = previousBooks;
+                        renderBooks();
+                        showCustomMessage("올바른 백업 파일 형식이 아니에요. JSON 파일을 확인해 주세요.");
+                    }
+                };
+                reader.readAsText(file);
+            }, "백업 불러오기");
         }
 
         function escapeHtml(text) {
